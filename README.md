@@ -1,6 +1,15 @@
 # Vulncanix - Web Vulnerability Scanner
 
-A fast, concurrent web vulnerability scanner written in Rust that performs directory and file enumeration to discover hidden resources on web applications.
+```
+ ██╗   ██╗██╗   ██╗██╗     ███╗   ██╗ ██████╗ █████╗ ███╗   ██╗██╗██╗  ██╗
+ ██║   ██║██║   ██║██║     ████╗  ██║██╔════╝██╔══██╗████╗  ██║██║╚██╗██╔╝
+ ██║   ██║██║   ██║██║     ██╔██╗ ██║██║     ███████║██╔██╗ ██║██║ ╚███╔╝ 
+ ╚██╗ ██╔╝██║   ██║██║     ██║╚██╗██║██║     ██╔══██║██║╚██╗██║██║ ██╔██╗ 
+  ╚████╔╝ ╚██████╔╝███████╗██║ ╚████║╚██████╗██║  ██║██║ ╚████║██║██╔╝ ██╗
+   ╚═══╝   ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝
+```
+
+A professional, fast, and concurrent web vulnerability scanner written in Rust with a modern colorful interface. Features intelligent directory enumeration, smart crawling, and parameter discovery to uncover hidden resources in web applications.
 
 ## Installation
 
@@ -12,7 +21,7 @@ A fast, concurrent web vulnerability scanner written in Rust that performs direc
 ### Build from Source
 
 ```bash
-git clone https://github.com/Shaa723/vulncanix
+git clone https://github.com/nullcranium/vulncanix
 cd vulncanix
 cargo build --release
 ```
@@ -58,6 +67,12 @@ vulncanix -t https://example.com \
 | `--follow-redirects` | | Follow HTTP redirects | `false` |
 | `--verbose` | `-v` | Verbose output | `false` |
 | `--insecure` | `-k` | Skip SSL certificate verification (insecure) | `false` |
+| `--crawl` | | Enable crawler mode | `false` |
+| `--depth` | | Max crawl depth | `3` |
+| `--max-pages` | | Max pages to crawl | `100` |
+| `--allow-external` | | Allow crawling external domains | `false` |
+| `--bar` | | Show progress bar during scanning | `false` |
+
 
 ## Examples
 
@@ -115,50 +130,32 @@ vulncanix -t https://example.com -v
 vulncanix -t https://example.com -w https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt
 ```
 
-## Understanding Output
+### Smart Crawler
 
-### Text Output Format
+Vulncanix includes a heuristic smart crawler that can discover and prioritize URLs based on their potential for vulnerabilities.
 
-```
-200 https://example.com/admin/ (Size: 1234) [Admin Interface] [HIGH RISK]
-403 https://example.com/config.php (Size: 0) [Access Forbidden, Configuration File] [HIGH RISK]
-301 https://example.com/backup/ (Size: 0) -> https://example.com/backup [Backup File]
-```
+```bash
+# Start crawler with default settings
+vulncanix -t https://example.com --crawl
 
-### JSON Output Format
+# Configure crawl depth and max pages
+vulncanix -t https://example.com --crawl --depth 3 --max-pages 200
 
-```json
-{
-  "url": "https://example.com/admin/",
-  "status_code": 200,
-  "content_length": 1234,
-  "response_time": 245,
-  "server": "nginx/1.18.0",
-  "location": null,
-  "content_type": "text/html",
-  "indicators": ["Admin Interface"],
-  "risk_score": 8
-}
+# Allow crawling external domains
+vulncanix -t https://example.com --crawl --allow-external
 ```
 
-## Risk Scoring
 
-The scanner automatically calculates risk scores (0-10) based on:
+### Advanced Extraction
 
-- **Status Code** : 200-299 (5 points), 401 (8 points), 403 (7 points), 500-599 (6 points)
-- **Path Content**: Admin/login paths (+3), Config files (+4), Backup files (+2)
-- **Risk Levels** : HIGH (8 - 10), MEDIUM (6 - 7), LOW (0 - 5)
+The crawler automatically extracts URLs from:
+- HTML links (`<a href>`)
+- Form actions (`<form action>`)
+- Script sources (`<script src>`)
+- Inline JavaScript (regex-based extraction)
+- `fetch()` and `xhr` calls
+- JSON API endpoints
 
-## Vulnerability Indicators
-
-The scanner identifies various security indicators:
-
-- **Authentication Required**: 401 responses
-- **Access Forbidden**  : 403 responses  
-- **Server Error**      : 500-599 responses
-- **Admin Interface**   : Paths containing "admin" or "login"
-- **Configuration File**: Paths containing "config" or ".env"
-- **Backup File**       : Paths containing ".bak", ".backup", ".old", or "~"
 
 ## Disclaimer
 

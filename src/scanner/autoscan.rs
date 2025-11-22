@@ -4,9 +4,11 @@ use crate::handler::check::ResponseAnalyzer;
 use crate::handler::http_client::{HttpClient, ScanResult};
 
 use clap::Parser;
+use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
 
 pub struct WebScanner {
@@ -59,13 +61,18 @@ impl WebScanner {
         self.fingerprint_server().await?;
         let expanded_wordlist = self.expand_wordlist(wordlist);
 
-        let progress = ProgressBar::new(expanded_wordlist.len() as u64);
-        progress.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
-            .unwrap()
-            .progress_chars("#>-"));
+        // show progress bar only if '--bar' flag is set
+        let progress = if self.config.bar {
+            let pb = ProgressBar::new(expanded_wordlist.len() as u64);
+            pb.set_style(ProgressStyle::default_bar()
+                .template("{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
+                .unwrap()
+                .progress_chars("█▓░"));
+            pb
+        } else {
+            ProgressBar::hidden()
+        };
 
-        // doing scan
         let mut handles = Vec::new();
 
         for path in expanded_wordlist {
@@ -99,7 +106,9 @@ impl WebScanner {
             }
         }
 
-        progress.finish_with_message("Scan completed");
+        if self.config.bar {
+            progress.finish_with_message("✓ Scan complete");
+        }
 
         // result
         let elapsed = start_time.elapsed().as_millis();
@@ -119,7 +128,8 @@ impl WebScanner {
     }
 
     async fn fingerprint_server(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("[+] Fingerprinting server...");
+        println!("  {} {}", "→".cyan(), "Analyzing..".bright_yellow());
+        thread::sleep(Duration::from_millis(100));
 
         let test_paths = vec![
             "/definitely-not-existing-path-12345",
@@ -142,7 +152,12 @@ impl WebScanner {
             analyzer.set_avg_response_time(avg_time);
         }
 
-        println!("[+] Server fingerprinting complete");
+        println!(
+            "  {} {}",
+            "✓".green(),
+            "Server fingerprint complete".green()
+        );
+        thread::sleep(Duration::from_millis(80));
         Ok(())
     }
 
@@ -164,6 +179,17 @@ impl WebScanner {
                 expanded.push(format!("{}/", word));
             }
         }
+
+        println!(
+            "  {} {}",
+            "✓".green(),
+            format!(
+                "Expanded to {} test cases",
+                expanded.len().to_string().bright_white().bold()
+            )
+            .green()
+        );
+        thread::sleep(Duration::from_millis(80));
 
         expanded
     }

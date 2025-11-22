@@ -6,11 +6,37 @@ use clap::Parser;
 use colored::*;
 use serde_json;
 use std::process;
+use std::thread;
+use std::time::Duration;
 
 mod config;
+pub mod crawler;
 mod handler;
 mod scanner;
 mod wordlist;
+
+fn print_banner() {
+    let banner = r#"
+ ██╗   ██╗██╗   ██╗██╗     ███╗   ██╗ ██████╗ █████╗ ███╗   ██╗██╗██╗  ██╗
+ ██║   ██║██║   ██║██║     ████╗  ██║██╔════╝██╔══██╗████╗  ██║██║╚██╗██╔╝
+ ██║   ██║██║   ██║██║     ██╔██╗ ██║██║     ███████║██╔██╗ ██║██║ ╚███╔╝ 
+ ╚██╗ ██╔╝██║   ██║██║     ██║╚██╗██║██║     ██╔══██║██║╚██╗██║██║ ██╔██╗ 
+  ╚████╔╝ ╚██████╔╝███████╗██║ ╚████║╚██████╗██║  ██║██║ ╚████║██║██╔╝ ██╗
+   ╚═══╝   ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝
+    "#;
+    println!("{}", banner.bright_cyan().bold());
+    println!(
+        "{}",
+        "         Web Vulnerability Scanner & Smart Crawler v1.1"
+            .bright_white()
+            .bold()
+    );
+    println!(
+        "{}",
+        "         https://github.com/nullcranium/vulncanix".dimmed()
+    );
+    println!();
+}
 
 pub struct OutputFormatter {
     output_format: String,
@@ -38,37 +64,70 @@ impl OutputFormatter {
     }
 
     fn print_result(&self, scan_result: &ScanResult, warning_flags: &[String], danger_level: u8) {
-        let status_display = if self.colors_enabled {
-            self.colorize_status(scan_result.status_code)
+        let (status_display, status_icon) = if self.colors_enabled {
+            let icon = match scan_result.status_code {
+                200..=299 => "✓".green(),
+                300..=399 => "→".yellow(),
+                400..=499 => "✗".red(),
+                500..=599 => "!".magenta(),
+                _ => "?".white(),
+            };
+            (self.colorize_status(scan_result.status_code), icon)
         } else {
-            scan_result.status_code.to_string()
+            (scan_result.status_code.to_string(), "•".white())
         };
 
         let size_info = if scan_result.content_length > 0 {
-            format!("(Size: {})", scan_result.content_length)
+            if self.colors_enabled {
+                format!(
+                    "({})",
+                    format!("{} bytes", scan_result.content_length).dimmed()
+                )
+            } else {
+                format!("({} bytes)", scan_result.content_length)
+            }
         } else {
             String::new()
         };
 
         let redirect_info = if let Some(ref redir_location) = scan_result.header_loc {
-            format!(" -> {}", redir_location)
+            if self.colors_enabled {
+                format!(" {} {}", "→".cyan(), redir_location.bright_blue())
+            } else {
+                format!(" -> {}", redir_location)
+            }
         } else {
             String::new()
         };
 
         print!(
-            "{} {} {}{}",
-            status_display, scan_result.url, size_info, redirect_info
+            "{} {} {} {}{}",
+            status_icon, status_display, scan_result.url, size_info, redirect_info
         );
 
         if !warning_flags.is_empty() {
-            print!(" [{}]", warning_flags.join(", "));
+            if self.colors_enabled {
+                print!(
+                    " {}",
+                    format!("[{}]", warning_flags.join(", ")).yellow().bold()
+                );
+            } else {
+                print!(" [{}]", warning_flags.join(", "));
+            }
         }
 
         if danger_level > 7 {
-            print!(" [HIGH RISK]");
+            if self.colors_enabled {
+                print!(" {}", "[CRITICAL]".red().bold());
+            } else {
+                print!(" [CRITICAL]");
+            }
         } else if danger_level > 5 {
-            print!(" [MEDIUM RISK]");
+            if self.colors_enabled {
+                print!(" {}", "[ELEVATED]".yellow().bold());
+            } else {
+                print!(" [ELEVATED]");
+            }
         }
 
         println!();
@@ -102,15 +161,71 @@ impl OutputFormatter {
 
     pub fn show_summary(&self, total_reqs: usize, interesting_hits: usize, time_taken: u128) {
         println!();
-        println!("===============================================");
-        println!("[+] Scan Summary          :");
-        println!("[+] Total requests        : {}", total_reqs);
-        println!("[+] Interesting responses : {}", interesting_hits);
-        println!("[+] Elapsed time          : {}ms", time_taken);
-        println!(
-            "[+] Requests per second        : {:.2}",
-            total_reqs as f64 / (time_taken as f64 / 1000.0)
-        );
+        if self.colors_enabled {
+            println!(
+                "{}",
+                "╔═══════════════════════════════════════════════╗".cyan()
+            );
+            println!(
+                "{}",
+                "║           Scan Complete - Summary             ║"
+                    .cyan()
+                    .bold()
+            );
+            println!(
+                "{}",
+                "╠═══════════════════════════════════════════════╣".cyan()
+            );
+            println!(
+                "{} {} {}",
+                "║".cyan(),
+                format!(
+                    "Total Requests      : {}",
+                    total_reqs.to_string().bright_white().bold()
+                ),
+                "║".cyan()
+            );
+            println!(
+                "{} {} {}",
+                "║".cyan(),
+                format!(
+                    "Interesting Finds   : {}",
+                    interesting_hits.to_string().green().bold()
+                ),
+                "║".cyan()
+            );
+            println!(
+                "{} {} {}",
+                "║".cyan(),
+                format!(
+                    "Time Elapsed        : {}ms",
+                    time_taken.to_string().yellow()
+                ),
+                "║".cyan()
+            );
+            let rps = total_reqs as f64 / (time_taken as f64 / 1000.0);
+            println!(
+                "{} {} {}",
+                "║".cyan(),
+                format!("Requests/Second     : {:.2}", rps).bright_magenta(),
+                "║".cyan()
+            );
+            println!(
+                "{}",
+                "╚═══════════════════════════════════════════════╝".cyan()
+            );
+        } else {
+            println!("===============================================");
+            println!("Scan Summary:");
+            println!("Total requests        : {}", total_reqs);
+            println!("Interesting responses : {}", interesting_hits);
+            println!("Elapsed time          : {}ms", time_taken);
+            println!(
+                "Requests per second   : {:.2}",
+                total_reqs as f64 / (time_taken as f64 / 1000.0)
+            );
+            println!("===============================================");
+        }
     }
 }
 
@@ -118,37 +233,178 @@ impl OutputFormatter {
 async fn main() {
     let cli_args = Config::parse();
 
-    println!("[+] Vulncanix - Simple Web Vulnerability Scanner");
-    println!("[+] Target        : {}", cli_args.target);
-    println!("[+] Concurrency   : {}", cli_args.concurrency);
-    println!("[+] Timeout       : {}s", cli_args.timeout);
+    print_banner();
+    thread::sleep(Duration::from_millis(100));
+
+    println!("{}", "Configuration:".bright_yellow().bold());
+    thread::sleep(Duration::from_millis(50));
+    println!(
+        "  {} {}",
+        "✓".green(),
+        format!("Target: {}", cli_args.target.bright_white())
+    );
+    thread::sleep(Duration::from_millis(50));
+    println!(
+        "  {} {}",
+        "✓".green(),
+        format!(
+            "Concurrency: {}",
+            cli_args.concurrency.to_string().bright_white()
+        )
+    );
+    thread::sleep(Duration::from_millis(50));
+    println!(
+        "  {} {}",
+        "✓".green(),
+        format!("Timeout: {}s", cli_args.timeout.to_string().bright_white())
+    );
+    thread::sleep(Duration::from_millis(50));
+
+    println!();
+    println!("{}", "Initializing scanner...".bright_yellow().bold());
+    thread::sleep(Duration::from_millis(100));
 
     let dict_loader = WordlistLoader::new();
     let word_list = match dict_loader.load(&cli_args.wordlist).await {
         Ok(words) => words,
         Err(e) => {
-            eprintln!("[-] Failed to load wordlist: {}", e);
+            eprintln!(
+                "{} {}",
+                "✗".red().bold(),
+                format!("Failed to load wordlist: {}", e).red()
+            );
             process::exit(1);
         }
     };
 
-    println!("[+] Loaded {} words from wordlist", word_list.len());
-    println!("[+] Starting scan...");
-    println!("===============================================");
+    println!(
+        "  {} {}",
+        "✓".green(),
+        format!(
+            "Loaded {} entries from wordlist",
+            word_list.len().to_string().bright_white().bold()
+        )
+    );
+    thread::sleep(Duration::from_millis(100));
+    println!();
+    println!("{}", "═".repeat(60).cyan());
+    println!("{}", "Starting scan...".bright_green().bold());
+    println!("{}", "═".repeat(60).cyan());
+    thread::sleep(Duration::from_millis(100));
 
     let vulnerability_scanner =
         match WebScanner::new(&cli_args.target, cli_args.concurrency, cli_args.timeout) {
             Ok(scanner) => scanner,
             Err(e) => {
-                eprintln!("[-] Failed to create scanner: {}", e);
+                eprintln!(
+                    "{} {}",
+                    "✗".red().bold(),
+                    format!("Failed to initialize scanner: {}", e).red()
+                );
                 process::exit(1);
             }
         };
 
+    if cli_args.crawl {
+        println!();
+        println!("{}", "Crawler Mode Activated".bright_magenta().bold());
+        thread::sleep(Duration::from_millis(80));
+        println!(
+            "  {} {}",
+            "✓".green(),
+            format!("Target: {}", cli_args.target.bright_white())
+        );
+        thread::sleep(Duration::from_millis(50));
+        println!(
+            "  {} {}",
+            "✓".green(),
+            format!("Max Depth: {}", cli_args.depth.to_string().bright_white())
+        );
+        thread::sleep(Duration::from_millis(50));
+        println!(
+            "  {} {}",
+            "✓".green(),
+            format!(
+                "Max Pages: {}",
+                cli_args.max_pages.to_string().bright_white()
+            )
+        );
+        thread::sleep(Duration::from_millis(50));
+        println!("{}", "═".repeat(60).cyan());
+
+        let seed_url = match url::Url::parse(&cli_args.target) {
+            Ok(url) => url,
+            Err(e) => {
+                eprintln!(
+                    "{} {}",
+                    "✗".red().bold(),
+                    format!("Invalid target URL: {}", e).red()
+                );
+                process::exit(1);
+            }
+        };
+
+        let mut engine = crate::crawler::engine::CrawlerEngine::new(
+            seed_url,
+            cli_args.depth,
+            cli_args.max_pages,
+            cli_args.allow_external,
+        );
+        let results = engine.run().await;
+
+        println!();
+        println!("{}", "═".repeat(60).cyan());
+        println!(
+            "{} {}",
+            "✓".green().bold(),
+            format!(
+                "Crawl complete! Discovered {} pages",
+                results.len().to_string().bright_white().bold()
+            )
+            .green()
+        );
+
+        if cli_args.output == "json" {
+            let json_output = serde_json::json!(results);
+            println!("{}", json_output);
+        } else {
+            for result in results {
+                let status_color = match result.status_code {
+                    200..=299 => result.status_code.to_string().green(),
+                    300..=399 => result.status_code.to_string().yellow(),
+                    _ => result.status_code.to_string().red(),
+                };
+                println!(
+                    "  {} {} {}",
+                    "•".cyan(),
+                    result.url.to_string().bright_white(),
+                    format!("({})", status_color)
+                );
+                for param in result.parameters {
+                    println!(
+                        "    {} {} {}",
+                        "→".dimmed(),
+                        param.name.bright_yellow(),
+                        format!("({:?})", param.param_type).dimmed()
+                    );
+                }
+            }
+        }
+        return;
+    }
+
     if let Err(e) = vulnerability_scanner.run_scan(word_list).await {
-        eprintln!("[-] Scan failed: {}", e);
+        eprintln!(
+            "{} {}",
+            "✗".red().bold(),
+            format!("Scan failed: {}", e).red()
+        );
         process::exit(1);
     }
 
-    println!("[+] Scan completed.");
+    println!();
+    println!(
+        "{}",
+        "✓ All operations completed successfully".green().bold()
+    );
 }

@@ -16,7 +16,7 @@ pub struct Config {
     pub timeout: u64,
 
     // get wordlist
-    // default set to "https://raw.githubusercontent.com/Bo0oM/fuzz.txt/master/fuzz.txt"
+    // default, set to "https://raw.githubusercontent.com/Bo0oM/fuzz.txt/master/fuzz.txt"
     #[arg(
         short,
         long,
@@ -53,6 +53,23 @@ pub struct Config {
         help = "Skip SSL certificate verification (insecure)"
     )]
     pub insecure: bool,
+
+    // crawler
+    #[arg(long, help = "Enable crawler mode")]
+    pub crawl: bool,
+
+    #[arg(long, default_value = "3", help = "Max crawl depth")]
+    pub depth: u32,
+
+    #[arg(long, default_value = "100", help = "Max pages to crawl")]
+    pub max_pages: usize,
+
+    #[arg(long, help = "Allow crawling external domains")]
+    pub allow_external: bool,
+
+    // progress bar
+    #[arg(long, help = "Show progress bar during scanning")]
+    pub bar: bool,
 }
 
 impl Config {
