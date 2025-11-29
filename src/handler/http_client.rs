@@ -13,6 +13,7 @@ pub struct ScanResult {
     pub server_header: Option<String>,
     pub header_loc: Option<String>,
     pub content_type: Option<String>,
+    pub body_preview: String,
 }
 
 pub struct HttpClient {
@@ -88,7 +89,7 @@ impl HttpClient {
 
         let content = response.text().await?;
         let content_hash = self.hash_content(&content);
-
+        let body_preview = content.chars().take(1024).collect::<String>();
         Ok(ScanResult {
             url: url.to_string(),
             status_code,
@@ -98,6 +99,7 @@ impl HttpClient {
             server_header,
             header_loc,
             content_type,
+            body_preview,
         })
     }
 

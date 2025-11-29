@@ -3,6 +3,7 @@ use crate::handler::http_client::ScanResult;
 pub struct ResponseAnalyzer {
     hashes_404: Vec<String>,
     avg_response_time: u128,
+    safe_config_files: Vec<String>,
 }
 
 impl ResponseAnalyzer {
@@ -10,6 +11,22 @@ impl ResponseAnalyzer {
         Self {
             hashes_404: Vec::new(),
             avg_response_time: 0,
+            safe_config_files: vec![
+                ".editorconfig".to_string(),
+                ".prettierrc".to_string(),
+                ".eslintrc".to_string(),
+                ".gitignore".to_string(),
+                ".dockerignore".to_string(),
+                ".npmignore".to_string(),
+                ".babelrc".to_string(),
+                ".stylelintrc".to_string(),
+                "tsconfig.json".to_string(),
+                "package.json".to_string(),
+                "composer.json".to_string(),
+                ".htaccess".to_string(),
+                "robots.txt".to_string(),
+                "sitemap.xml".to_string(),
+            ],
         }
     }
 
@@ -25,6 +42,9 @@ impl ResponseAnalyzer {
         if self.hashes_404.contains(&result.content_hash) {
             return false;
         }
+        if self.is_error_page(result) {
+            return false;
+        }
 
         match result.status_code {
             200..=299 => true,
@@ -34,6 +54,67 @@ impl ResponseAnalyzer {
             500..=599 => true,
             _ => false,
         }
+    }
+
+    fn is_error_page(&self, result: &ScanResult) -> bool {
+        let body_lower = result.body_preview.to_lowercase();
+        let error_indicators = [
+            "error 404",
+            "error 500",
+            "not found",
+            "page not found",
+            "tidak tersedia",
+            "halaman tidak tersedia",
+            "tidak ditemukan",
+            "halaman tidak ditemukan",
+            "unavailable",
+            "page unavailable",
+            "access denied",
+            "forbidden",
+            "internal server error",
+            "something went wrong",
+            "terjadi kesalahan",
+        ];
+
+        for indicator in &error_indicators {
+            if body_lower.contains(indicator) {
+                return true;
+            }
+        }
+
+        if result.status_code >= 500 && result.status_code < 600 {
+            if result.content_length < 500 {
+                return true;
+            }
+            if body_lower.contains("500")
+                && (body_lower.contains("error")
+                    || body_lower.contains("tidak")
+                    || body_lower.contains("tersedia")
+                    || body_lower.contains("internal server"))
+            {
+                return true;
+            }
+        }
+
+        if result.status_code == 200 {
+            if body_lower.contains("error")
+                && (body_lower.contains("404")
+                    || body_lower.contains("500")
+                    || body_lower.contains("403")
+                    || body_lower.contains("502")
+                    || body_lower.contains("503"))
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn is_safe_config_file(&self, url: &str) -> bool {
+        self.safe_config_files
+            .iter()
+            .any(|safe_file| url.ends_with(safe_file) || url.contains(&format!("/{}", safe_file)))
     }
 
     pub fn get_vuln_indicators(&self, result: &ScanResult) -> Vec<String> {
@@ -58,7 +139,9 @@ impl ResponseAnalyzer {
             indicators.push("Admin Interface".to_string());
         }
 
-        if result.url.contains("config") || result.url.contains(".env") {
+        if (result.url.contains("config") || result.url.contains(".env"))
+            && !self.is_safe_config_file(&result.url)
+        {
             indicators.push("Configuration File".to_string());
         }
 
@@ -67,6 +150,10 @@ impl ResponseAnalyzer {
 
     pub fn get_risk_score(&self, result: &ScanResult) -> u8 {
         let mut score = 0;
+
+        if self.is_safe_config_file(&result.url) {
+            return 2;
+        }
 
         // score priority
         score += match result.status_code {
@@ -81,7 +168,9 @@ impl ResponseAnalyzer {
             score += 3;
         }
 
-        if result.url.contains("config") || result.url.contains(".env") {
+        if (result.url.contains("config") || result.url.contains(".env"))
+            && !self.is_safe_config_file(&result.url)
+        {
             score += 4;
         }
 
