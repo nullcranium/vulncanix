@@ -71,6 +71,7 @@ vulncanix -t https://example.com \
 | `--depth` | | Max crawl depth | `3` |
 | `--max-pages` | | Max pages to crawl | `100` |
 | `--allow-external` | | Allow crawling external domains | `false` |
+| `--hybrid` | | Enable hybrid mode (crawler + wordlist scanning) | `false` |
 | `--bar` | | Show progress bar during scanning | `false` |
 
 
@@ -145,16 +146,28 @@ vulncanix -t https://example.com --crawl --depth 3 --max-pages 200
 vulncanix -t https://example.com --crawl --allow-external
 ```
 
+### Hybrid Scanning Mode
 
-### Advanced Extraction
+Hybrid mode combines the best of both worlds: dynamic URL discovery via crawling followed by comprehensive wordlist-based fuzzing on discovered endpoints.
 
-The crawler automatically extracts URLs from:
-- HTML links (`<a href>`)
-- Form actions (`<form action>`)
-- Script sources (`<script src>`)
-- Inline JavaScript (regex-based extraction)
-- `fetch()` and `xhr` calls
-- JSON API endpoints
+```bash
+# Basic hybrid scan - crawl then fuzz discovered paths
+vulncanix -t https://example.com --crawl --hybrid
+
+# Hybrid scan with custom settings
+vulncanix -t https://example.com --crawl --hybrid \
+  --depth 3 \
+  --max-pages 200 \
+  -c 50 \
+  -w /path/to/wordlist.txt
+
+# Aggressive hybrid scan with extensions
+vulncanix -t https://example.com --crawl --hybrid \
+  --depth 5 \
+  --max-pages 500 \
+  -e php,html,js,txt,bak \
+  -c 100
+```
 
 
 ## Disclaimer

@@ -307,7 +307,13 @@ async fn main() {
 
     if cli_args.crawl {
         println!();
-        println!("{}", "Crawler Mode Activated".bright_magenta().bold());
+        if cli_args.hybrid {
+            println!("{}", "Hybrid Mode Activated".bright_magenta().bold());
+            println!("{}", "  (Crawler Discovery + Wordlist Scanning)".dimmed());
+        } else {
+            println!("{}", "Crawler Mode Activated".bright_magenta().bold());
+        }
+
         thread::sleep(Duration::from_millis(80));
         println!(
             "  {} {}",
@@ -350,7 +356,7 @@ async fn main() {
             cli_args.max_pages,
             cli_args.allow_external,
         );
-        let results = engine.run().await;
+        let crawl_results = engine.run().await;
 
         println!();
         println!("{}", "═".repeat(60).cyan());
@@ -359,16 +365,101 @@ async fn main() {
             "✓".green().bold(),
             format!(
                 "Crawl complete! Discovered {} pages",
-                results.len().to_string().bright_white().bold()
+                crawl_results.len().to_string().bright_white().bold()
             )
             .green()
         );
 
+        // if hybrid mode, extract base paths
+        // and run wordlist scanning
+        if cli_args.hybrid {
+            println!();
+            println!("{}", "═".repeat(60).cyan());
+            println!("{}", "Phase 2: Wordlist Scanning".bright_cyan().bold());
+            thread::sleep(Duration::from_millis(100));
+
+            let mut base_paths = std::collections::HashSet::new();
+            for result in &crawl_results {
+                let url_str = result.url.to_string();
+                if let Some(last_slash_idx) = url_str.rfind('/') {
+                    if last_slash_idx > 8 {
+                        let base = &url_str[..last_slash_idx + 1];
+                        base_paths.insert(base.to_string());
+                    }
+                }
+            }
+
+            println!(
+                "  {} {}",
+                "✓".green(),
+                format!(
+                    "Extracted {} unique base paths from crawled URLs",
+                    base_paths.len().to_string().bright_white().bold()
+                )
+                .green()
+            );
+            thread::sleep(Duration::from_millis(80));
+
+            println!();
+            println!(
+                "{}",
+                "Starting wordlist scans on discovered paths...".bright_yellow()
+            );
+            thread::sleep(Duration::from_millis(100));
+
+            for (idx, base_path) in base_paths.iter().enumerate() {
+                println!();
+                println!(
+                    "{} {} {}",
+                    "→".cyan(),
+                    format!("Scanning base path ({}/{})", idx + 1, base_paths.len()).dimmed(),
+                    base_path.bright_white()
+                );
+
+                let scan_start = std::time::Instant::now();
+                match WebScanner::new(base_path, cli_args.concurrency, cli_args.timeout) {
+                    Ok(scanner) => {
+                        if let Ok(()) = scanner.run_scan(word_list.clone()).await {
+                            // results are printed by run_scan
+                        }
+
+                        let scan_duration = scan_start.elapsed().as_secs();
+                        println!(
+                            "  {} {}",
+                            "✓".green(),
+                            format!("Completed in {}s", scan_duration.to_string().dimmed())
+                                .dimmed()
+                        );
+                    }
+                    Err(e) => {
+                        if cli_args.verbose {
+                            eprintln!("  {} Failed to scan {}: {}", "✗".red(), base_path, e);
+                        }
+                    }
+                }
+            }
+
+            println!();
+            println!("{}", "═".repeat(60).cyan());
+            println!("{}", "✓ Hybrid scan complete!".green().bold());
+            println!(
+                "  {} Crawled {} pages",
+                "→".cyan(),
+                crawl_results.len().to_string().bright_white()
+            );
+            println!(
+                "  {} Scanned {} base paths with wordlist",
+                "→".cyan(),
+                base_paths.len().to_string().bright_white()
+            );
+
+            return;
+        }
         if cli_args.output == "json" {
-            let json_output = serde_json::json!(results);
+            let json_output = serde_json::json!(crawl_results);
             println!("{}", json_output);
         } else {
-            for result in results {
+            for result in crawl_results {
                 let status_color = match result.status_code {
                     200..=299 => result.status_code.to_string().green(),
                     300..=399 => result.status_code.to_string().yellow(),

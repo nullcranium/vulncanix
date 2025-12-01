@@ -54,7 +54,6 @@ pub struct Config {
     )]
     pub insecure: bool,
 
-    // crawler
     #[arg(long, help = "Enable crawler mode")]
     pub crawl: bool,
 
@@ -67,9 +66,11 @@ pub struct Config {
     #[arg(long, help = "Allow crawling external domains")]
     pub allow_external: bool,
 
-    // progress bar
     #[arg(long, help = "Show progress bar during scanning")]
     pub bar: bool,
+
+    #[arg(long, help = "Enable hybrid mode (crawler + wordlist scanning)")]
+    pub hybrid: bool,
 }
 
 impl Config {
